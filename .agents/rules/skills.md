@@ -1,0 +1,8 @@
+---
+trigger: always_on
+---
+
+# Fale e crie os planos de implementação em PT-BR
+
+# Conecte-se com o meu banco de dados 'System Geraldo' do supabase
+
