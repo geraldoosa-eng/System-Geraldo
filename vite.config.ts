@@ -26,10 +26,42 @@ export default defineConfig(({ mode }) => {
                   const reqBody = JSON.parse(body || '{}')
                   const apiKey = env.GOOGLE_API_KEY || env.GEMINI_API_KEY
                   
-                  const result = await handleGerarPlano(reqBody, apiKey)
+                  // Injetamos a chave no process.env temporariamente para o ambiente local
+                  process.env.GOOGLE_API_KEY = apiKey
                   
-                  res.writeHead(200, { 'Content-Type': 'application/json' })
-                  res.end(JSON.stringify(result))
+                  // Criamos objetos de requisição e resposta mockados com a mesma assinatura da Vercel
+                  const mockReq = {
+                    method: 'POST',
+                    body: reqBody
+                  }
+                  
+                  const mockRes = {
+                    statusCode: 200,
+                    headers: {} as Record<string, string>,
+                    setHeader(name: string, value: string) {
+                      this.headers[name] = value
+                      return this
+                    },
+                    status(code: number) {
+                      this.statusCode = code
+                      return this
+                    },
+                    json(data: any) {
+                      res.writeHead(this.statusCode, { 
+                        'Content-Type': 'application/json',
+                        ...this.headers
+                      })
+                      res.end(JSON.stringify(data))
+                      return this
+                    },
+                    end() {
+                      res.writeHead(this.statusCode, this.headers)
+                      res.end()
+                      return this
+                    }
+                  }
+                  
+                  await handleGerarPlano(mockReq, mockRes)
                 } catch (error: any) {
                   res.writeHead(500, { 'Content-Type': 'application/json' })
                   res.end(JSON.stringify({ error: error.message || 'Erro interno do servidor' }))
