@@ -29,6 +29,33 @@ import toast, { Toaster } from 'react-hot-toast'
 import './App.css'
 
 // --- Tipos ---
+export interface RefeicoesDia {
+  cafe_manha: string[]
+  lanche_manha: string[]
+  almoco: string[]
+  lanche_tarde: string[]
+  jantar: string[]
+}
+
+export interface PlanoAlimentarConteudo {
+  dias: {
+    segunda: RefeicoesDia
+    terca: RefeicoesDia
+    quarta: RefeicoesDia
+    quinta: RefeicoesDia
+    sexta: RefeicoesDia
+    sabado: RefeicoesDia
+    domingo: RefeicoesDia
+  }
+}
+
+export interface PlanoAlimentar {
+  id?: string
+  paciente_id: string
+  conteudo: PlanoAlimentarConteudo
+  created_at?: string
+}
+
 interface Paciente {
   id: string
   nome: string
@@ -263,10 +290,11 @@ function Dashboard({ session }: { session: any }) {
   const [novaConsultaRetorno, setNovaConsultaRetorno] = useState('')
 
   // --- ESTADOS EXTRAS PROMPT 6 ---
-  const [planoAtivo, setPlanoAtivo] = useState<any | null>(null)
+  const [planoAtivo, setPlanoAtivo] = useState<PlanoAlimentarConteudo | null>(null)
+  const [planoEditandoId, setPlanoEditandoId] = useState<string | null>(null)
+  const [activePlanTab, setActivePlanTab] = useState<string>('segunda')
   const [isGenerating, setIsGenerating] = useState(false)
   const [loadingMessage, setLoadingMessage] = useState('')
-  const [activePlanTab, setActivePlanTab] = useState('Segunda-feira')
 
   // --- MÓDULO 1: AGENDA ---
   const [calendarDate, setCalendarDate] = useState(new Date())
@@ -633,11 +661,13 @@ function Dashboard({ session }: { session: any }) {
       setLoading(true)
       
       // Buscar perfil da nutricionista
-      const { data: nutriData, error: nutriError } = await supabase
+      const { data, error: nutriError } = await supabase
         .from('nutricionistas')
-        .select('nome')
+        .select('nome, bio, especialidade, telefone, crn, foto_url')
         .eq('id', session.user.id)
         .maybeSingle()
+
+      const nutriData = data as any
 
       if (nutriError) {
         console.error('Erro ao buscar perfil da nutricionista:', nutriError)
@@ -731,21 +761,48 @@ function Dashboard({ session }: { session: any }) {
     const nutriName = nutriNome || 'Nutricionista'
     const pacienteNome = pacientes.find(p => p.id === selectedPacienteId)?.nome || ''
     const dataGeracao = new Date(plan.created_at).toLocaleDateString('pt-BR')
-    const labelMap: any = {
-      cafe_da_manha: '☕ Café da Manhã', lanche_manha: '🍎 Lanche da Manhã',
-      almoco: '🍛 Almoço', lanche_tarde: '🍪 Lanche da Tarde', jantar: '🥗 Jantar'
-    }
+    
     let diasHtml = ''
-    if (plan.conteudo?.plano_semanal) {
+    
+    if (plan.conteudo?.dias) {
+      // Nova estrutura
+      const diaLabels: any = {
+        segunda: 'Segunda-feira', terca: 'Terça-feira', quarta: 'Quarta-feira',
+        quinta: 'Quinta-feira', sexta: 'Sexta-feira', sabado: 'Sábado', domingo: 'Domingo'
+      }
+      
+      const labelMap: any = {
+        cafe_manha: '☕ Café da Manhã', lanche_manha: '🍎 Lanche da Manhã',
+        almoco: '🍛 Almoço', lanche_tarde: '🍪 Lanche da Tarde', jantar: '🥗 Jantar'
+      }
+
+      diasHtml = Object.keys(plan.conteudo.dias).map((diaKey) => {
+        const diaObj = plan.conteudo.dias[diaKey]
+        const refHtml = Object.keys(diaObj).map(key => {
+          const itens = (diaObj[key] || []).filter((i: string) => i && i.trim() !== '')
+          if (!itens.length) return ''
+          return `<div style="margin-bottom:12px"><strong style="color:#10b981">${labelMap[key] || key}</strong><ul style="margin:4px 0 0 18px;color:#475569">${itens.map((i: string) => `<li>${i}</li>`).join('')}</ul></div>`
+        }).join('')
+        
+        return `<div style="page-break-inside:avoid;margin-bottom:20px;padding:16px;border:1px solid #e2e8f0;border-radius:8px"><h3 style="color:#0f172a;margin:0 0 12px;font-size:1rem">${diaLabels[diaKey] || diaKey}</h3><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">${refHtml}</div></div>`
+      }).join('')
+
+    } else if (plan.conteudo?.plano_semanal) {
+      // Estrutura legada
+      const labelMap: any = {
+        cafe_da_manha: '☕ Café da Manhã', lanche_manha: '🍎 Lanche da Manhã',
+        almoco: '🍛 Almoço', lanche_tarde: '🍪 Lanche da Tarde', jantar: '🥗 Jantar'
+      }
       diasHtml = plan.conteudo.plano_semanal.map((diaObj: any) => {
         const refHtml = Object.keys(diaObj.refeicoes).map(key => {
-          const itens = diaObj.refeicoes[key].filter((i: string) => i.trim() !== '')
+          const itens = (diaObj.refeicoes[key] || []).filter((i: string) => i && i.trim() !== '')
           if (!itens.length) return ''
           return `<div style="margin-bottom:12px"><strong style="color:#10b981">${labelMap[key] || key}</strong><ul style="margin:4px 0 0 18px;color:#475569">${itens.map((i: string) => `<li>${i}</li>`).join('')}</ul></div>`
         }).join('')
         return `<div style="page-break-inside:avoid;margin-bottom:20px;padding:16px;border:1px solid #e2e8f0;border-radius:8px"><h3 style="color:#0f172a;margin:0 0 12px;font-size:1rem">${diaObj.dia}</h3><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">${refHtml}</div></div>`
       }).join('')
     }
+    
     printWin.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Plano Alimentar — ${pacienteNome}</title><style>body{font-family:Arial,sans-serif;padding:30px;color:#0f172a}h1{color:#10b981;border-bottom:2px solid #10b981;padding-bottom:10px}p.sub{color:#64748b;font-size:14px}@media print{body{padding:15px}}</style></head><body><h1>🥗 Plano Alimentar Semanal</h1><p class="sub"><strong>Paciente:</strong> ${pacienteNome} &nbsp;|&nbsp; <strong>Nutricionista:</strong> ${nutriName} &nbsp;|&nbsp; <strong>Gerado em:</strong> ${dataGeracao}</p><hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0">${diasHtml}<p style="margin-top:30px;font-size:11px;color:#94a3b8;text-align:center">Gerado pelo System Geraldo — ${new Date().toLocaleDateString('pt-BR')}</p></body></html>`)
     printWin.document.close()
     setTimeout(() => { printWin.print() }, 400)
@@ -768,12 +825,44 @@ function Dashboard({ session }: { session: any }) {
 
   const handleCompartilharPlano = (plan: any, pacienteNome: string) => {
     let texto = `📋 Plano Alimentar Semanal — ${pacienteNome}\n\n`
-    if (plan.conteudo?.plano_semanal) {
+    
+    if (plan.conteudo?.dias) {
+      // Nova estrutura
+      const diaLabels: any = {
+        segunda: 'Segunda-feira', terca: 'Terça-feira', quarta: 'Quarta-feira',
+        quinta: 'Quinta-feira', sexta: 'Sexta-feira', sabado: 'Sábado', domingo: 'Domingo'
+      }
+      
+      const labelMap: any = {
+        cafe_manha: 'Café da Manhã', lanche_manha: 'Lanche da Manhã',
+        almoco: 'Almoço', lanche_tarde: 'Lanche da Tarde', jantar: 'Jantar'
+      }
+
+      Object.keys(plan.conteudo.dias).forEach((diaKey) => {
+        const diaNome = diaLabels[diaKey] || diaKey
+        const diaObj = plan.conteudo.dias[diaKey]
+        let diaTexto = ''
+
+        Object.keys(diaObj).forEach(key => {
+          const label = labelMap[key] || key
+          const itens = (diaObj[key] || []).filter((i: string) => i && i.trim() !== '')
+          if (itens.length) {
+            diaTexto += `  ${label}: ${itens.join(' / ')}\n`
+          }
+        })
+
+        if (diaTexto) {
+          texto += `📅 ${diaNome}\n${diaTexto}\n`
+        }
+      })
+
+    } else if (plan.conteudo?.plano_semanal) {
+      // Estrutura legada
       plan.conteudo.plano_semanal.forEach((diaObj: any) => {
         texto += `📅 ${diaObj.dia}\n`
         Object.keys(diaObj.refeicoes).forEach(key => {
           const labelMap: any = { cafe_da_manha: 'Café da Manhã', lanche_manha: 'Lanche da Manhã', almoco: 'Almoço', lanche_tarde: 'Lanche da Tarde', jantar: 'Jantar' }
-          const itens = diaObj.refeicoes[key].filter((i: string) => i.trim() !== '')
+          const itens = (diaObj.refeicoes[key] || []).filter((i: string) => i && i.trim() !== '')
           if (itens.length) {
             texto += `  ${labelMap[key] || key}: ${itens.join(' / ')}\n`
           }
@@ -781,6 +870,7 @@ function Dashboard({ session }: { session: any }) {
         texto += '\n'
       })
     }
+    
     if (navigator.clipboard) {
       navigator.clipboard.writeText(texto)
       toast.success('Plano copiado para a área de transferência! Cole no WhatsApp.')
@@ -1136,167 +1226,310 @@ function Dashboard({ session }: { session: any }) {
       setLoading(false)
     }
   }
-
   const handleGerarPlanoComIA = async () => {
-    if (!pacienteSelecionado) return
+    if (!pacienteSelecionado) {
+      toast.error('Nenhum paciente selecionado.')
+      return
+    }
 
     setIsGenerating(true)
-    setLoadingMessage('Buscando dados do paciente...')
     setPlanoAtivo(null)
+    setPlanoEditandoId(null)
 
-    const messages = [
+    const mensagens = [
       'Buscando dados do paciente...',
       'Analisando restrições e alergias...',
-      'IA calculando o cardápio balanceado...',
-      'Estruturando refeições brasileiras...',
-      'Finalizando montagem do cardápio semanal...'
+      'IA elaborando cardápio semanal brasileiro...',
+      'Estruturando as refeições de cada dia...',
+      'Finalizando montagem do plano alimentar...'
     ]
-    let msgIndex = 0
+    let msgIdx = 0
+    setLoadingMessage(mensagens[0])
     const msgInterval = setInterval(() => {
-      if (msgIndex < messages.length - 1) {
-        msgIndex++
-        setLoadingMessage(messages[msgIndex])
-      }
+      msgIdx = (msgIdx + 1) % mensagens.length
+      setLoadingMessage(mensagens[msgIdx])
     }, 2500)
 
     try {
       const dados_paciente = `
 Nome: ${pacienteSelecionado.nome}
-Idade: ${pacienteSelecionado.data_nascimento ? `${calcularIdade(pacienteSelecionado.data_nascimento).replace(/[()]/g, '')}` : 'Não informada'}
+Idade: ${pacienteSelecionado.data_nascimento ? calcularIdade(pacienteSelecionado.data_nascimento) : 'Não informada'}
 Sexo: ${pacienteSelecionado.sexo || 'Não informado'}
 Peso Inicial: ${pacienteSelecionado.peso_inicial ? `${pacienteSelecionado.peso_inicial} kg` : 'Não informado'}
-Altura: ${pacienteSelecionado.altura ? `${pacienteSelecionado.altura} cm` : 'Não informado'}
-Objetivos: ${pacienteSelecionado.objetivos ? pacienteSelecionado.objetivos.join(', ') : 'Não definido'}
-Outros objetivos descritos: ${pacienteSelecionado.objetivo_texto || 'Nenhum'}
+Altura: ${pacienteSelecionado.altura ? `${pacienteSelecionado.altura} cm` : 'Não informada'}
+Objetivos: ${pacienteSelecionado.objetivos?.join(', ') || 'Não definidos'}
+Descrição de objetivos: ${pacienteSelecionado.objetivo_texto || 'Nenhuma'}
 Nível de Atividade Física: ${pacienteSelecionado.nivel_atividade || 'Não informado'}
-Patologias: ${pacienteSelecionado.patologias ? pacienteSelecionado.patologias.join(', ') : 'Nenhuma'}
-Restrições Alimentares: ${pacienteSelecionado.restricoes_alimentares ? pacienteSelecionado.restricoes_alimentares.join(', ') : 'Nenhuma'}
-Alergias Alimentares: ${pacienteSelecionado.alergias ? pacienteSelecionado.alergias.join(', ') : 'Nenhuma'}
+Patologias: ${pacienteSelecionado.patologias?.join(', ') || 'Nenhuma'}
+Restrições Alimentares: ${pacienteSelecionado.restricoes_alimentares?.join(', ') || 'Nenhuma'}
+Alergias Alimentares: ${pacienteSelecionado.alergias?.join(', ') || 'Nenhuma'}
 Medicamentos: ${pacienteSelecionado.medicamentos || 'Nenhum'}
 Suplementos: ${pacienteSelecionado.suplementos || 'Nenhum'}
 Refeições por dia: ${pacienteSelecionado.refeicoes_por_dia || 'Não informado'}
-Água por dia: ${pacienteSelecionado.litros_agua ? `${pacienteSelecionado.litros_agua} Litros` : 'Não informado'}
-Atividade Física: ${pacienteSelecionado.atividade_fisica ? `Sim - ${pacienteSelecionado.atividade_fisica_descricao || ''}` : 'Não'}
-Observações Gerais: ${pacienteSelecionado.observacoes || 'Nenhuma'}
-`;
+Horário que acorda: ${pacienteSelecionado.horario_acorda || 'Não informado'}
+Horário que dorme: ${pacienteSelecionado.horario_dorme || 'Não informado'}
+Água por dia: ${pacienteSelecionado.litros_agua ? `${pacienteSelecionado.litros_agua} litros` : 'Não informado'}
+Atividade física: ${pacienteSelecionado.atividade_fisica ? `Sim - ${pacienteSelecionado.atividade_fisica_descricao || ''}` : 'Não'}
+Observações gerais: ${pacienteSelecionado.observacoes || 'Nenhuma'}
+`.trim()
 
       const response = await fetch('/api/gerar-plano', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ dados_paciente: dados_paciente.trim() }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dados_paciente }),
       })
 
       clearInterval(msgInterval)
 
       if (!response.ok) {
         const errJson = await response.json().catch(() => ({}))
-        throw new Error(errJson.error || 'Erro na resposta do servidor local.');
+        throw new Error(errJson.error || `Erro do servidor: ${response.status}`)
       }
 
       const result = await response.json()
-      setPlanoAtivo(result)
-      setActivePlanTab('Segunda-feira')
-      toast.success('Plano alimentar gerado com IA com sucesso! Ajuste os campos se desejar.')
+
+      // Converter do formato plano_semanal (IA) para o formato dias (editor)
+      if (!result.plano_semanal || !Array.isArray(result.plano_semanal)) {
+        throw new Error('A IA retornou uma estrutura inesperada.')
+      }
+
+      const mapeamentoDias: Record<string, keyof PlanoAlimentarConteudo['dias']> = {
+        'Segunda-feira': 'segunda',
+        'Terça-feira': 'terca',
+        'Quarta-feira': 'quarta',
+        'Quinta-feira': 'quinta',
+        'Sexta-feira': 'sexta',
+        'Sábado': 'sabado',
+        'Domingo': 'domingo',
+      }
+
+      const mapeamentoRefeicoes: Record<string, keyof RefeicoesDia> = {
+        cafe_da_manha: 'cafe_manha',
+        lanche_manha: 'lanche_manha',
+        almoco: 'almoco',
+        lanche_tarde: 'lanche_tarde',
+        jantar: 'jantar',
+      }
+
+      const planoConvertido: PlanoAlimentarConteudo = {
+        dias: {
+          segunda: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+          terca:   { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+          quarta:  { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+          quinta:  { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+          sexta:   { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+          sabado:  { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+          domingo: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+        }
+      }
+
+      result.plano_semanal.forEach((diaObj: any) => {
+        const diaKey = mapeamentoDias[diaObj.dia]
+        if (!diaKey) return
+        const diaDestino = planoConvertido.dias[diaKey]
+        if (!diaObj.refeicoes) return
+        Object.keys(diaObj.refeicoes).forEach((refKeyOrigem) => {
+          const refKeyDestino = mapeamentoRefeicoes[refKeyOrigem]
+          if (!refKeyDestino) return
+          const arrayOrigem: string[] = diaObj.refeicoes[refKeyOrigem] || []
+          const arrayDestino = ['', '', '', '', '']
+          for (let i = 0; i < 5; i++) {
+            arrayDestino[i] = arrayOrigem[i] || ''
+          }
+          ;(diaDestino as any)[refKeyDestino] = arrayDestino
+        })
+      })
+
+      setPlanoAtivo(planoConvertido)
+      setActivePlanTab('segunda')
+      toast.success('✨ Plano alimentar gerado com IA! Revise e salve quando quiser.')
     } catch (error: any) {
       clearInterval(msgInterval)
-      console.error(error)
-      
-      toast((t) => (
-        <span style={{ fontSize: '0.875rem' }}>
-          Não foi possível gerar o plano com IA no momento.
-          <br/>
-          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-            <button 
-              onClick={() => {
-                toast.dismiss(t.id)
-                handleGerarPlanoComIA()
-              }}
-              style={{ background: 'var(--primary)', color: 'white', border: 'none', padding: '0.35rem 0.65rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}
-            >
-              Tentar Novamente
-            </button>
-            <button 
-              onClick={() => {
-                toast.dismiss(t.id)
-                handleCriarPlanoManual()
-              }}
-              style={{ background: 'white', color: 'var(--text-main)', border: '1px solid var(--border)', padding: '0.35rem 0.65rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem' }}
-            >
-              Criar Manual
-            </button>
-          </div>
-        </span>
-      ), { duration: 9000 })
+      console.error('Erro ao gerar plano com IA:', error)
+
+      toast(
+        (t) => (
+          <span style={{ fontSize: '0.875rem', lineHeight: '1.5' }}>
+            <strong>Não foi possível gerar o plano com IA.</strong>
+            <br />
+            {error.message && <span style={{ color: '#64748b', fontSize: '0.8rem' }}>{error.message}</span>}
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+              <button
+                onClick={() => { toast.dismiss(t.id); handleGerarPlanoComIA() }}
+                style={{ background: 'var(--primary)', color: 'white', border: 'none', padding: '0.35rem 0.75rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+              >
+                🔄 Tentar Novamente
+              </button>
+              <button
+                onClick={() => { toast.dismiss(t.id); handleCriarPlanoManual() }}
+                style={{ background: 'white', color: 'var(--text-main)', border: '1px solid var(--border)', padding: '0.35rem 0.75rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
+              >
+                📝 Criar Manual
+              </button>
+            </div>
+          </span>
+        ),
+        { duration: 12000 }
+      )
     } finally {
       setIsGenerating(false)
+      setLoadingMessage('')
     }
   }
 
   const handleCriarPlanoManual = () => {
-    const planoVazio = {
-      plano_semanal: [
-        { dia: 'Segunda-feira', refeicoes: { cafe_da_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] } },
-        { dia: 'Terça-feira', refeicoes: { cafe_da_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] } },
-        { dia: 'Quarta-feira', refeicoes: { cafe_da_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] } },
-        { dia: 'Quinta-feira', refeicoes: { cafe_da_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] } },
-        { dia: 'Sexta-feira', refeicoes: { cafe_da_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] } },
-        { dia: 'Sábado', refeicoes: { cafe_da_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] } },
-        { dia: 'Domingo', refeicoes: { cafe_da_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] } },
-      ]
+    const planoVazio: PlanoAlimentarConteudo = {
+      dias: {
+        segunda: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+        terca: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+        quarta: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+        quinta: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+        sexta: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+        sabado: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+        domingo: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] }
+      }
     }
     setPlanoAtivo(planoVazio)
-    setActivePlanTab('Segunda-feira')
-    toast.success('Plano manual criado! Preencha as refeições para salvar.')
+    setPlanoEditandoId(null)
+    setActivePlanTab('segunda')
+    toast.success('Novo plano alimentar manual criado! Preencha para salvar.')
   }
 
-  const handleUpdateOption = (diaNome: string, refeicaoNome: string, optionIndex: number, newValue: string) => {
+  const handleEditarPlanoAlimentar = (plano: any) => {
+    let conteudoFinal: PlanoAlimentarConteudo;
+    
+    if (plano.conteudo && plano.conteudo.dias) {
+      conteudoFinal = plano.conteudo;
+    } else if (plano.conteudo && plano.conteudo.plano_semanal) {
+      // Estrutura antiga! Converter para o novo padrão:
+      const mapeamentoDias: any = {
+        'Segunda-feira': 'segunda',
+        'Terça-feira': 'terca',
+        'Quarta-feira': 'quarta',
+        'Quinta-feira': 'quinta',
+        'Sexta-feira': 'sexta',
+        'Sábado': 'sabado',
+        'Domingo': 'domingo'
+      };
+      
+      const mapeamentoRefeicoes: any = {
+        cafe_da_manha: 'cafe_manha',
+        lanche_manha: 'lanche_manha',
+        almoco: 'almoco',
+        lanche_tarde: 'lanche_tarde',
+        jantar: 'jantar'
+      };
+
+      const planoVazio: PlanoAlimentarConteudo = {
+        dias: {
+          segunda: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+          terca: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+          quarta: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+          quinta: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+          sexta: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+          sabado: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+          domingo: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] }
+        }
+      };
+
+      plano.conteudo.plano_semanal.forEach((diaObj: any) => {
+        const diaNovoKey = mapeamentoDias[diaObj.dia];
+        if (diaNovoKey) {
+          Object.keys(diaObj.refeicoes).forEach((refKey: string) => {
+            const refNovaKey = mapeamentoRefeicoes[refKey] || refKey;
+            const refDia = planoVazio.dias[diaNovoKey as keyof typeof planoVazio.dias];
+            if (refDia && refNovaKey in refDia) {
+              const arrayAntigo = diaObj.refeicoes[refKey] || [];
+              const arrayNovo = ['', '', '', '', ''];
+              for (let i = 0; i < 5; i++) {
+                arrayNovo[i] = arrayAntigo[i] || '';
+              }
+              (refDia as any)[refNovaKey] = arrayNovo;
+            }
+          });
+        }
+      });
+      conteudoFinal = planoVazio;
+    } else {
+      conteudoFinal = {
+        dias: {
+          segunda: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+          terca: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+          quarta: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+          quinta: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+          sexta: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+          sabado: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] },
+          domingo: { cafe_manha: ['', '', '', '', ''], lanche_manha: ['', '', '', '', ''], almoco: ['', '', '', '', ''], lanche_tarde: ['', '', '', '', ''], jantar: ['', '', '', '', ''] }
+        }
+      };
+    }
+
+    setPlanoAtivo(conteudoFinal)
+    setPlanoEditandoId(plano.id)
+    setActivePlanTab('segunda')
+    toast.success('Plano carregado para edição!')
+  }
+
+  const handleUpdateOption = (diaKey: string, refeicaoKey: string, optionIndex: number, newValue: string) => {
     if (!planoAtivo) return
 
     const novoPlano = { ...planoAtivo }
-    const diaIndex = novoPlano.plano_semanal.findIndex((d: any) => d.dia === diaNome)
+    const dias = { ...novoPlano.dias }
+    const diaObj = { ...dias[diaKey as keyof typeof dias] }
+    const refeicoesArray = [...(diaObj[refeicaoKey as keyof typeof diaObj] as string[])]
     
-    if (diaIndex !== -1) {
-      const novasRefeicoes = { ...novoPlano.plano_semanal[diaIndex].refeicoes }
-      const novasOpcoes = [...novasRefeicoes[refeicaoNome]]
-      novasOpcoes[optionIndex] = newValue
-      
-      novasRefeicoes[refeicaoNome] = novasOpcoes
-      novoPlano.plano_semanal[diaIndex] = {
-        ...novoPlano.plano_semanal[diaIndex],
-        refeicoes: novasRefeicoes
-      }
-      setPlanoAtivo(novoPlano)
-    }
+    refeicoesArray[optionIndex] = newValue
+    
+    ;(diaObj as any)[refeicaoKey] = refeicoesArray
+    dias[diaKey as keyof typeof dias] = diaObj
+    novoPlano.dias = dias
+    
+    setPlanoAtivo(novoPlano)
   }
 
   const handleSalvarPlanoAlimentar = async () => {
-    if (!selectedPacienteId || !planoAtivo) return
+    if (!selectedPacienteId || !planoAtivo) {
+      toast.error('Paciente não selecionado ou plano inválido.')
+      return
+    }
 
     try {
       setLoading(true)
 
-      const { error } = await supabase
-        .from('planos_alimentares')
-        .insert([{
-          paciente_id: selectedPacienteId,
-          conteudo: planoAtivo
-        }])
+      if (planoEditandoId) {
+        // Modo Edição (UPDATE)
+        const { error } = await supabase
+          .from('planos_alimentares')
+          .update({
+            conteudo: planoAtivo
+          })
+          .eq('id', planoEditandoId)
 
-      if (error) throw error
+        if (error) throw error
+        toast.success('Plano alimentar atualizado com sucesso!')
+      } else {
+        // Modo Criação (INSERT)
+        const { error } = await supabase
+          .from('planos_alimentares')
+          .insert([{
+            paciente_id: selectedPacienteId,
+            conteudo: planoAtivo
+          }])
 
-      toast.success('Plano alimentar salvo com sucesso!')
-      
+        if (error) throw error
+        toast.success('Plano alimentar criado com sucesso!')
+      }
+
       setPlanoAtivo(null)
-      
-      // Atualiza a listagem de planos alimentares do paciente no histórico
+      setPlanoEditandoId(null)
+
+      // Atualiza o histórico
       const { data, error: planosError } = await supabase
         .from('planos_alimentares')
         .select('*')
         .eq('paciente_id', selectedPacienteId)
         .order('created_at', { ascending: false })
-      
+
       if (planosError) throw planosError
       setPlanosAlimentares(data || [])
     } catch (error: any) {
@@ -1304,6 +1537,12 @@ Observações Gerais: ${pacienteSelecionado.observacoes || 'Nenhuma'}
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleCancelarEdicao = () => {
+    setPlanoAtivo(null)
+    setPlanoEditandoId(null)
+    toast.success('Edição cancelada.')
   }
 
   const handleSavePacienteCompleto = async (e: React.FormEvent) => {
@@ -2956,35 +3195,52 @@ Observações Gerais: ${pacienteSelecionado.observacoes || 'Nenhuma'}
 
               {/* SEÇÃO 3 — PLANOS ALIMENTARES */}
               <section className="profile-section-card animate-fade">
-                {/* 3A. MODO LOADING DA GERADORA DE IA */}
+
+                {/* 3A. LOADING DA IA */}
                 {isGenerating && (
-                  <div className="weight-chart-empty" style={{ height: '300px', background: '#f8fafc' }}>
-                    <div style={{ position: 'relative', width: '50px', height: '50px', marginBottom: '1rem' }}>
-                      <div className="logo-small" style={{ width: '50px', height: '50px', fontSize: '1.5rem', animation: 'spin 1.5s linear infinite' }}>✨</div>
-                    </div>
-                    <h4 style={{ fontWeight: 700, color: 'var(--primary)', margin: '0 0 0.5rem 0' }}>Gerando Plano Alimentar com IA</h4>
-                    <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', animation: 'pulse 1.5s ease-in-out infinite', margin: 0 }}>
+                  <div className="animate-fade" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
+                    <div style={{
+                      width: '64px', height: '64px', borderRadius: '50%',
+                      background: 'linear-gradient(135deg, var(--primary), #6366f1)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '1.75rem', margin: '0 auto 1.25rem',
+                      animation: 'spin 2s linear infinite',
+                      boxShadow: '0 0 24px rgba(16,185,129,0.35)'
+                    }}>✨</div>
+                    <h4 style={{ fontWeight: 700, color: 'var(--primary)', margin: '0 0 0.5rem 0', fontSize: '1.1rem' }}>
+                      Gerando Plano com Inteligência Artificial
+                    </h4>
+                    <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', margin: 0, animation: 'pulse 1.5s ease-in-out infinite' }}>
                       {loadingMessage}
                     </p>
+                    <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'center', gap: '0.4rem' }}>
+                      {[0,1,2].map(i => (
+                        <div key={i} style={{
+                          width: '8px', height: '8px', borderRadius: '50%',
+                          background: 'var(--primary)',
+                          animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite`
+                        }} />
+                      ))}
+                    </div>
                   </div>
                 )}
 
-                {/* 3B. MODO DE EDIÇÃO DO PLANO ATIVO (GERADO OU MANUAL) */}
+                {/* 3B. MODO DE EDIÇÃO DO PLANO ATIVO (CRIAR OU EDITAR) */}
                 {!isGenerating && planoAtivo && (
                   <div className="animate-fade">
                     <div className="profile-section-title" style={{ borderBottom: 'none', marginBottom: '1rem' }}>
                       <div className="profile-section-title-text">
                         <Plus size={20} style={{ transform: 'rotate(45deg)' }} />
-                        <span>✨ Elaborar Plano Alimentar</span>
+                        <span>{planoEditandoId ? '✏️ Editar Plano Alimentar' : '📋 Elaborar Plano Alimentar'}</span>
                       </div>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
                         <button 
                           type="button" 
                           className="btn-secondary-outline"
-                          onClick={() => setPlanoAtivo(null)}
+                          onClick={handleCancelarEdicao}
                           style={{ padding: '0.4rem 0.85rem', fontSize: '0.8125rem' }}
                         >
-                          Descartar
+                          Cancelar
                         </button>
                         <button 
                           type="button" 
@@ -2992,51 +3248,59 @@ Observações Gerais: ${pacienteSelecionado.observacoes || 'Nenhuma'}
                           onClick={handleSalvarPlanoAlimentar}
                           style={{ width: 'auto', padding: '0.4rem 0.85rem', fontSize: '0.8125rem' }}
                         >
-                          Salvar Plano Alimentar
+                          {planoEditandoId ? 'Atualizar Plano' : 'Salvar Plano Alimentar'}
                         </button>
                       </div>
                     </div>
 
                     <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
-                      Ajuste as opções de refeições sugeridas pela IA ou preencha-as manualmente para cada dia da semana.
+                      Preencha manualmente as refeições para cada dia da semana para estruturar o plano alimentar do paciente de forma personalizada.
                     </p>
 
-                    {/* Abas horizontais dos dias da semana */}
+                    {/* Abas horizontais dos dias da semana em português */}
                     <div className="tabs-navigation" style={{ borderBottom: '2px solid var(--border)', marginBottom: '1.5rem', overflowX: 'auto', whiteSpace: 'nowrap', display: 'flex' }}>
-                      {['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo'].map((dia) => (
+                      {[
+                        { key: 'segunda', label: 'Segunda-feira' },
+                        { key: 'terca', label: 'Terça-feira' },
+                        { key: 'quarta', label: 'Quarta-feira' },
+                        { key: 'quinta', label: 'Quinta-feira' },
+                        { key: 'sexta', label: 'Sexta-feira' },
+                        { key: 'sabado', label: 'Sábado' },
+                        { key: 'domingo', label: 'Domingo' }
+                      ].map((dia) => (
                         <button
-                          key={dia}
+                          key={dia.key}
                           type="button"
-                          className={`tab-btn ${activePlanTab === dia ? 'active' : ''}`}
-                          onClick={() => setActivePlanTab(dia)}
+                          className={`tab-btn ${activePlanTab === dia.key ? 'active' : ''}`}
+                          onClick={() => setActivePlanTab(dia.key)}
                           style={{ fontSize: '0.85rem', padding: '0.5rem 0.75rem', display: 'inline-block' }}
                         >
-                          {dia}
+                          {dia.label}
                         </button>
                       ))}
                     </div>
 
                     {/* Formulário com as refeições do dia ativo */}
-                    {planoAtivo.plano_semanal.map((diaObj: any) => {
-                      if (diaObj.dia !== activePlanTab) return null
+                    {(() => {
+                      const diaAtivoObj = planoAtivo.dias[activePlanTab as keyof typeof planoAtivo.dias]
+                      if (!diaAtivoObj) return null
+
+                      const refeicoesConfig = [
+                        { key: 'cafe_manha', label: '☕ Café da Manhã' },
+                        { key: 'lanche_manha', label: '🍎 Lanche da Manhã' },
+                        { key: 'almoco', label: '🍛 Almoço' },
+                        { key: 'lanche_tarde', label: '🍪 Lanche da Tarde' },
+                        { key: 'jantar', label: '🥗 Jantar' }
+                      ]
 
                       return (
-                        <div key={diaObj.dia} className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                          {Object.keys(diaObj.refeicoes).map((refKey) => {
-                            const labelMap: any = {
-                              cafe_da_manha: '☕ Café da Manhã',
-                              lanche_manha: '🍎 Lanche da Manhã',
-                              almoco: '🍛 Almoço',
-                              lanche_tarde: '🍪 Lanche da Tarde',
-                              jantar: '🥗 Jantar'
-                            }
-                            const refLabel = labelMap[refKey] || refKey
-                            const opcoes = diaObj.refeicoes[refKey]
-
+                        <div className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                          {refeicoesConfig.map((ref) => {
+                            const opcoes = diaAtivoObj[ref.key as keyof typeof diaAtivoObj] || ['', '', '', '', '']
                             return (
-                              <div key={refKey} style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                              <div key={ref.key} style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
                                 <h5 style={{ margin: '0 0 0.75rem 0', fontWeight: 700, color: 'var(--text-main)', fontSize: '0.9rem' }}>
-                                  {refLabel}
+                                  {ref.label}
                                 </h5>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                   {opcoes.map((opcao: string, index: number) => (
@@ -3046,7 +3310,7 @@ Observações Gerais: ${pacienteSelecionado.observacoes || 'Nenhuma'}
                                       className="input-field"
                                       placeholder={`Opção ${index + 1} de refeição`}
                                       value={opcao}
-                                      onChange={(e) => handleUpdateOption(diaObj.dia, refKey, index, e.target.value)}
+                                      onChange={(e) => handleUpdateOption(activePlanTab, ref.key, index, e.target.value)}
                                       style={{ padding: '0.5rem 0.75rem', fontSize: '0.875rem' }}
                                     />
                                   ))}
@@ -3056,15 +3320,15 @@ Observações Gerais: ${pacienteSelecionado.observacoes || 'Nenhuma'}
                           })}
                         </div>
                       )
-                    })}
+                    })()}
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.75rem', borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
                       <button 
                         type="button" 
                         className="btn-secondary-outline"
-                        onClick={() => setPlanoAtivo(null)}
+                        onClick={handleCancelarEdicao}
                       >
-                        Descartar
+                        Cancelar
                       </button>
                       <button 
                         type="button" 
@@ -3072,13 +3336,13 @@ Observações Gerais: ${pacienteSelecionado.observacoes || 'Nenhuma'}
                         onClick={handleSalvarPlanoAlimentar}
                         style={{ width: 'auto' }}
                       >
-                        Salvar Plano Alimentar
+                        {planoEditandoId ? 'Atualizar Plano' : 'Salvar Plano Alimentar'}
                       </button>
                     </div>
                   </div>
                 )}
 
-                {/* 3C. MODO EXIBIÇÃO PADRÃO (HISTÓRICO & AÇÃO DE INICIALIZAÇÃO) */}
+                {/* 3C. MODO EXIBIÇÃO PADRÃO (HISTÓRICO DE VERSÕES DO PACIENTE) */}
                 {!isGenerating && !planoAtivo && (
                   <div className="animate-fade">
                     <div className="profile-section-title">
@@ -3086,19 +3350,20 @@ Observações Gerais: ${pacienteSelecionado.observacoes || 'Nenhuma'}
                         <Plus size={20} style={{ transform: 'rotate(45deg)' }} />
                         <span>Planos Alimentares</span>
                       </div>
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                         <button 
                           type="button" 
                           className="btn-secondary-outline"
                           onClick={handleCriarPlanoManual}
-                          style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
+                          style={{ padding: '0.5rem 1rem', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
                         >
-                          Criar Manual
+                          ➕ Novo Plano Manual
                         </button>
                         <button 
                           type="button" 
                           className="btn-primary"
                           onClick={handleGerarPlanoComIA}
+                          disabled={isGenerating}
                           style={{ width: 'auto', padding: '0.5rem 1rem', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
                         >
                           ✨ Gerar Plano com IA
@@ -3119,8 +3384,16 @@ Observações Gerais: ${pacienteSelecionado.observacoes || 'Nenhuma'}
                               </span>
                               <div className="plan-item-header-actions">
                                 <span className="plan-date">
-                                  Gerado em {new Date(plan.created_at).toLocaleDateString('pt-BR')} às {new Date(plan.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                  Criado em {new Date(plan.created_at).toLocaleDateString('pt-BR')} às {new Date(plan.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                                 </span>
+                                <button
+                                  className="btn-export-pdf"
+                                  onClick={(e) => { e.stopPropagation(); handleEditarPlanoAlimentar(plan) }}
+                                  title="Editar plano"
+                                  style={{ background: '#f1f5f9', color: 'var(--text-main)', border: '1px solid var(--border)', padding: '0.25rem 0.5rem', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                  ✏️ Editar
+                                </button>
                                 <button
                                   className="btn-export-pdf"
                                   onClick={(e) => { e.stopPropagation(); handleExportPlanPDF(plan) }}
@@ -3139,7 +3412,66 @@ Observações Gerais: ${pacienteSelecionado.observacoes || 'Nenhuma'}
                             </div>
                             {expandedPlanId === plan.id && (
                               <div className="plan-item-body animate-fade">
-                                {typeof plan.conteudo === 'object' && plan.conteudo.plano_semanal ? (
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
+                                  <button
+                                    className="btn-primary"
+                                    onClick={() => handleEditarPlanoAlimentar(plan)}
+                                    style={{ width: 'auto', padding: '0.4rem 0.85rem', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                                  >
+                                    ✏️ Visualizar / Editar Plano
+                                  </button>
+                                </div>
+
+                                {typeof plan.conteudo === 'object' && plan.conteudo.dias ? (
+                                  // Nova estrutura
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                                    {Object.keys(plan.conteudo.dias).map((diaKey) => {
+                                      const diaLabels: any = {
+                                        segunda: 'Segunda-feira', terca: 'Terça-feira', quarta: 'Quarta-feira',
+                                        quinta: 'Quinta-feira', sexta: 'Sexta-feira', sabado: 'Sábado', domingo: 'Domingo'
+                                      }
+                                      const diaNome = diaLabels[diaKey] || diaKey
+                                      const diaObj = plan.conteudo.dias[diaKey]
+
+                                      return (
+                                        <div key={diaKey} style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+                                          <h6 style={{ margin: '0 0 0.75rem 0', color: 'var(--primary)', fontWeight: 700, fontSize: '0.95rem' }}>
+                                            {diaNome}
+                                          </h6>
+                                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                                            {Object.keys(diaObj).map((refKey) => {
+                                              const labelMap: any = {
+                                                cafe_manha: '☕ Café da Manhã',
+                                                lanche_manha: '🍎 Lanche da Manhã',
+                                                almoco: '🍛 Almoço',
+                                                lanche_tarde: '🍪 Lanche da Tarde',
+                                                jantar: '🥗 Jantar'
+                                              }
+                                              const labelRef = labelMap[refKey] || refKey
+                                              const itens = (diaObj[refKey] || []).filter((opt: string) => opt && opt.trim() !== '')
+
+                                              if (itens.length === 0) return null
+
+                                              return (
+                                                <div key={refKey} style={{ background: '#f8fafc', padding: '0.75rem 1rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                                                  <span style={{ fontWeight: 700, fontSize: '0.8125rem', color: 'var(--text-main)', display: 'block', marginBottom: '0.5rem' }}>
+                                                    {labelRef}
+                                                  </span>
+                                                  <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.8125rem', color: '#475569', lineHeight: '1.5' }}>
+                                                    {itens.map((it: string, idx: number) => (
+                                                      <li key={idx} style={{ marginBottom: '0.25rem' }}>{it}</li>
+                                                    ))}
+                                                  </ul>
+                                                </div>
+                                              )
+                                            })}
+                                          </div>
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                ) : typeof plan.conteudo === 'object' && plan.conteudo.plano_semanal ? (
+                                  // Estrutura legada
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                                     {plan.conteudo.plano_semanal.map((diaObj: any) => (
                                       <div key={diaObj.dia} style={{ borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
@@ -3156,7 +3488,7 @@ Observações Gerais: ${pacienteSelecionado.observacoes || 'Nenhuma'}
                                               jantar: '🥗 Jantar'
                                             }
                                             const labelRef = labelMap[refKey] || refKey
-                                            const itens = diaObj.refeicoes[refKey].filter((opt: string) => opt.trim() !== '')
+                                            const itens = (diaObj.refeicoes[refKey] || []).filter((opt: string) => opt && opt.trim() !== '')
 
                                             if (itens.length === 0) return null
 
@@ -3189,7 +3521,7 @@ Observações Gerais: ${pacienteSelecionado.observacoes || 'Nenhuma'}
                       </div>
                     ) : (
                       <div className="plan-empty-state">
-                        <p style={{ margin: 0 }}>Nenhum plano alimentar gerado ainda.</p>
+                        <p style={{ margin: 0 }}>Nenhum plano alimentar cadastrado ainda.</p>
                       </div>
                     )}
                   </div>
