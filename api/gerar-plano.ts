@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 
 export interface Refeicoes {
   cafe_da_manha: string[];
@@ -27,22 +27,22 @@ async function gerarPlanoComIA(dados_paciente: string, apiKey: string): Promise<
     generationConfig: {
       responseMimeType: 'application/json',
       responseSchema: {
-        type: 'object',
+        type: SchemaType.OBJECT,
         properties: {
           plano_semanal: {
-            type: 'array',
+            type: SchemaType.ARRAY,
             items: {
-              type: 'object',
+              type: SchemaType.OBJECT,
               properties: {
-                dia: { type: 'string' },
+                dia: { type: SchemaType.STRING },
                 refeicoes: {
-                  type: 'object',
+                  type: SchemaType.OBJECT,
                   properties: {
-                    cafe_da_manha: { type: 'array', items: { type: 'string' } },
-                    lanche_manha: { type: 'array', items: { type: 'string' } },
-                    almoco: { type: 'array', items: { type: 'string' } },
-                    lanche_tarde: { type: 'array', items: { type: 'string' } },
-                    jantar: { type: 'array', items: { type: 'string' } }
+                    cafe_da_manha: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+                    lanche_manha: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+                    almoco: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+                    lanche_tarde: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+                    jantar: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } }
                   },
                   required: ['cafe_da_manha', 'lanche_manha', 'almoco', 'lanche_tarde', 'jantar']
                 }
